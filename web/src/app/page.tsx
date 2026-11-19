@@ -2,6 +2,9 @@
 
 import React, { useMemo, useState } from 'react';
 import { Plus, ShieldCheck } from 'lucide-react';
+import { ClosureGuardrail } from '@/components/ClosureGuardrail';
+import { EscalationGatekeeper } from '@/components/EscalationGatekeeper';
+import { NewTicketSimulator } from '@/components/NewTicketSimulator';
 import { TicketActionDrawer } from '@/components/TicketActionDrawer';
 import { TicketQueue } from '@/components/TicketQueue';
 import { useTickets } from '@/context/TicketsContext';
@@ -9,8 +12,15 @@ import { SNAPSHOT_ISO } from '@/lib/metricsCalc';
 import { Ticket } from '@/lib/types';
 
 export default function TriageWorkbenchPage() {
-  const { tickets, loading, error, metrics, updateTicket } = useTickets();
+  const { tickets, loading, error, metrics, updateTicket, addTicket } =
+    useTickets();
+
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [gatekeeperTicketId, setGatekeeperTicketId] = useState<string | null>(
+    null
+  );
+  const [closureTicketId, setClosureTicketId] = useState<string | null>(null);
+  const [simulatorOpen, setSimulatorOpen] = useState<boolean>(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const selectedTicket = useMemo(
@@ -18,9 +28,19 @@ export default function TriageWorkbenchPage() {
     [tickets, selectedTicketId]
   );
 
+  const gatekeeperTicket = useMemo(
+    () => tickets.find((t) => t.ticket_id === gatekeeperTicketId) ?? null,
+    [tickets, gatekeeperTicketId]
+  );
+
+  const closureTicket = useMemo(
+    () => tickets.find((t) => t.ticket_id === closureTicketId) ?? null,
+    [tickets, closureTicketId]
+  );
+
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 4000);
   };
 
   const handleDeflectKnownIssue = (
@@ -28,10 +48,11 @@ export default function TriageWorkbenchPage() {
     knownIssueId: string,
     clientMessage: string
   ) => {
+    const target = tickets.find((t) => t.ticket_id === ticketId);
     updateTicket(ticketId, {
       status: 'Closed',
       final_closed_at: SNAPSHOT_ISO,
-      first_closed_at: selectedTicket?.first_closed_at || SNAPSHOT_ISO,
+      first_closed_at: target?.first_closed_at || SNAPSHOT_ISO,
       deflected_at_gate: true,
       linked_known_issue_id: knownIssueId,
       closure_verified: true,
@@ -42,17 +63,64 @@ export default function TriageWorkbenchPage() {
     );
   };
 
-  const handleOpenGatekeeper = (ticket: Ticket) => {
-    // Wired to EscalationGatekeeper modal in Slice 4
+  const handleResolveConfigAtL1 = (
+    ticketId: string,
+    resolutionSummary: string
+  ) => {
+    const target = tickets.find((t) => t.ticket_id === ticketId);
+    updateTicket(ticketId, {
+      status: 'Closed',
+      final_closed_at: SNAPSHOT_ISO,
+      first_closed_at: target?.first_closed_at || SNAPSHOT_ISO,
+      deflected_at_gate: true,
+      closure_verified: true,
+      resolution_note: resolutionSummary,
+    });
     showToast(
-      `Ready for Slice 4: Pre-Escalation Gatekeeper will open for ${ticket.ticket_id}.`
+      `${ticketId} resolved at L1 via config playbook — engineering escalation avoided.`
     );
   };
 
-  const handleOpenClosure = (ticket: Ticket) => {
-    // Wired to ClosureGuardrail modal in Slice 4
+  const handleEscalateWithPacket = (
+    ticketId: string,
+    handoffPacket: string
+  ) => {
+    const target = tickets.find((t) => t.ticket_id === ticketId);
+    const nextEngId =
+      target?.eng_ticket_id ||
+      `ENG-${5000 + Math.floor(100 + Math.random() * 899)}`;
+
+    updateTicket(ticketId, {
+      escalated_to_eng: 'Yes',
+      status: 'Open - with Engineering',
+      eng_ticket_id: nextEngId,
+      eng_handoffs: (target?.eng_handoffs ?? 0) + 1,
+      handoff_packet: handoffPacket,
+    });
     showToast(
-      `Ready for Slice 4: Pre-Closure Guardrail will open for ${ticket.ticket_id}.`
+      `${ticketId} escalated cleanly as ${nextEngId} — structured Handoff Packet copied & attached.`
+    );
+  };
+
+  const handleConfirmClose = (ticketId: string, clientMessage: string) => {
+    const target = tickets.find((t) => t.ticket_id === ticketId);
+    updateTicket(ticketId, {
+      status: 'Closed',
+      first_closed_at: target?.first_closed_at || SNAPSHOT_ISO,
+      final_closed_at: SNAPSHOT_ISO,
+      closure_verified: true,
+      resolution_note: clientMessage,
+    });
+    showToast(
+      `${ticketId} closed after guardrail verification — client message copied to clipboard.`
+    );
+  };
+
+  const handleCreateSimulatedTicket = (newTicket: Ticket) => {
+    addTicket(newTicket);
+    setSelectedTicketId(newTicket.ticket_id);
+    showToast(
+      `Injected live ticket ${newTicket.ticket_id} (${newTicket.client_name}) into open queue.`
     );
   };
 
@@ -89,9 +157,7 @@ export default function TriageWorkbenchPage() {
 
         <button
           type="button"
-          onClick={() =>
-            showToast('Ready for Slice 4: Incoming Ticket Simulator modal plugs in here.')
-          }
+          onClick={() => setSimulatorOpen(true)}
           className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-slate-800"
         >
           <Plus className="h-4 w-4" />
@@ -194,9 +260,38 @@ export default function TriageWorkbenchPage() {
         ticket={selectedTicket}
         onClose={() => setSelectedTicketId(null)}
         onDeflectKnownIssue={handleDeflectKnownIssue}
-        onOpenGatekeeper={handleOpenGatekeeper}
-        onOpenClosure={handleOpenClosure}
+        onOpenGatekeeper={(ticket) => setGatekeeperTicketId(ticket.ticket_id)}
+        onOpenClosure={(ticket) => setClosureTicketId(ticket.ticket_id)}
       />
+
+      {/* Pre-Escalation Gatekeeper Modal */}
+      {gatekeeperTicket && (
+        <EscalationGatekeeper
+          ticket={gatekeeperTicket}
+          onClose={() => setGatekeeperTicketId(null)}
+          onDeflectKnownIssue={handleDeflectKnownIssue}
+          onResolveConfigAtL1={handleResolveConfigAtL1}
+          onEscalateWithPacket={handleEscalateWithPacket}
+        />
+      )}
+
+      {/* Pre-Closure Guardrail Modal */}
+      {closureTicket && (
+        <ClosureGuardrail
+          ticket={closureTicket}
+          onClose={() => setClosureTicketId(null)}
+          onConfirmClose={handleConfirmClose}
+        />
+      )}
+
+      {/* Incoming Ticket Simulator Modal */}
+      {simulatorOpen && (
+        <NewTicketSimulator
+          existingTickets={tickets}
+          onClose={() => setSimulatorOpen(false)}
+          onCreateTicket={handleCreateSimulatedTicket}
+        />
+      )}
     </div>
   );
 }
