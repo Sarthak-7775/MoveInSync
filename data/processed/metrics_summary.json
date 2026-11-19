@@ -1,0 +1,31 @@
+{
+  "total_tickets": 1444,
+  "eom_backlog": [
+    {
+      "date": "2026-07-31",
+      "open_total": 30,
+      "open_escalated": 21,
+      "open_gt_48h": 13
+    },
+    {
+      "date": "2026-08-31",
+      "open_total": 23,
+      "open_escalated": 18,
+      "open_gt_48h": 13
+    },
+    {
+      "date": "2026-09-30",
+      "open_total": 48,
+      "open_escalated": 34,
+      "open_gt_48h": 25
+    }
+  ],
+  "escalation_rate_pct": 33.7,
+  "avoidable_escalation_rate_pct": 52.1,
+  "pingpong_rate_pct": 47.1,
+  "reopen_rate_pct": 10.5,
+  "avg_csat": 3.7,
+  "csat_response_rate_pct": 44.9,
+  "median_res_l1_hrs": 12.6,
+  "median_res_esc_hrs": 86.8
+}
