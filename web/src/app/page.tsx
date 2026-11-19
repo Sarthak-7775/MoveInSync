@@ -1,14 +1,65 @@
 'use client';
 
+import React, { useMemo, useState } from 'react';
+import { Plus, ShieldCheck } from 'lucide-react';
+import { TicketActionDrawer } from '@/components/TicketActionDrawer';
+import { TicketQueue } from '@/components/TicketQueue';
 import { useTickets } from '@/context/TicketsContext';
+import { SNAPSHOT_ISO } from '@/lib/metricsCalc';
+import { Ticket } from '@/lib/types';
 
-export default function Slice1VerifyPage() {
-  const { loading, error, metrics, agentStats, weeklySeries } = useTickets();
+export default function TriageWorkbenchPage() {
+  const { tickets, loading, error, metrics, updateTicket } = useTickets();
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const selectedTicket = useMemo(
+    () => tickets.find((t) => t.ticket_id === selectedTicketId) ?? null,
+    [tickets, selectedTicketId]
+  );
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleDeflectKnownIssue = (
+    ticketId: string,
+    knownIssueId: string,
+    clientMessage: string
+  ) => {
+    updateTicket(ticketId, {
+      status: 'Closed',
+      final_closed_at: SNAPSHOT_ISO,
+      first_closed_at: selectedTicket?.first_closed_at || SNAPSHOT_ISO,
+      deflected_at_gate: true,
+      linked_known_issue_id: knownIssueId,
+      closure_verified: true,
+      resolution_note: clientMessage,
+    });
+    showToast(
+      `${ticketId} deflected via Known Bug (${knownIssueId}) — client update copied & backlog updated.`
+    );
+  };
+
+  const handleOpenGatekeeper = (ticket: Ticket) => {
+    // Wired to EscalationGatekeeper modal in Slice 4
+    showToast(
+      `Ready for Slice 4: Pre-Escalation Gatekeeper will open for ${ticket.ticket_id}.`
+    );
+  };
+
+  const handleOpenClosure = (ticket: Ticket) => {
+    // Wired to ClosureGuardrail modal in Slice 4
+    showToast(
+      `Ready for Slice 4: Pre-Closure Guardrail will open for ${ticket.ticket_id}.`
+    );
+  };
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-8 text-sm text-slate-600">
-        Loading 1,444 tickets from CSV...
+      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-600">
+        Loading 1,444 RideOps support tickets...
       </div>
     );
   }
@@ -16,65 +67,136 @@ export default function Slice1VerifyPage() {
   if (error) {
     return (
       <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
-        <strong>Error:</strong> {error}
+        <strong>Dataset Error:</strong> {error}
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900">
-          Slice 1 Verification — Live CSV Engine
-        </h1>
-        <p className="text-sm text-slate-600">
-          Cross-check these live TypeScript values against your Python{' '}
-          <code>metrics_summary.json</code> before moving to Slice 2.
-        </p>
+    <div className="space-y-5">
+      {/* Header Row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">
+            L1 Triage &amp; Escalation Workbench
+          </h1>
+          <p className="text-xs text-slate-600">
+            Risk-ranked live queue as of <strong>30 Sep 2026</strong> · Intercepts
+            avoidable escalations (52.1% baseline) and premature closures before they hit
+            engineering or reopen.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            showToast('Ready for Slice 4: Incoming Ticket Simulator modal plugs in here.')
+          }
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-slate-800"
+        >
+          <Plus className="h-4 w-4" />
+          Simulate Incoming Ticket
+        </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-xs font-medium text-slate-500">Total Tickets</div>
-          <div className="mt-1 text-2xl font-bold">{metrics.totalTickets}</div>
+      {/* Live Toast Notification */}
+      {toast && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-medium text-emerald-900">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+          {toast}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-xs font-medium text-slate-500">Open Backlog (Sep 30)</div>
-          <div className="mt-1 text-2xl font-bold text-rose-600">
-            {metrics.openBacklog}
+      )}
+
+      {/* Compact 4-Card Live KPI Strip */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Open Backlog
           </div>
-          <div className="text-xs text-slate-500">
-            {metrics.openEscalated} escalated · {metrics.openAgedOver48h} aged &gt;48h
+          <div className="mt-1 flex items-baseline gap-2">
+            <span
+              className={`text-2xl font-bold ${metrics.openBacklog <= 30 ? 'text-emerald-600' : 'text-rose-600'
+                }`}
+            >
+              {metrics.openBacklog}
+            </span>
+            <span className="text-xs text-slate-500">target ≤ 30</span>
+          </div>
+          <div className="mt-1 text-xs text-slate-600">
+            <strong>{metrics.openEscalated}</strong> escalated ·{' '}
+            <strong>{metrics.openL1Only}</strong> L1 only
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-xs font-medium text-slate-500">Avoidable Escalations</div>
-          <div className="mt-1 text-2xl font-bold text-amber-600">
-            {metrics.avoidableEscalationRatePct}%
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Open Aged &gt; 48h
           </div>
-          <div className="text-xs text-slate-500">
-            Ping-pong (2+): {metrics.pingPongRatePct}%
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-900">
+              {metrics.openAgedOver48h}
+            </span>
+            <span className="text-xs font-semibold text-rose-600">
+              ({metrics.openAgedOver48hPct}%)
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-slate-600">
+            Target &lt; 25% of open queue
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-xs font-medium text-slate-500">Reopen Rate / CSAT</div>
-          <div className="mt-1 text-2xl font-bold">
-            {metrics.reopenRatePct}% / {metrics.avgCsat}
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Avoidable Escalations
           </div>
-          <div className="text-xs text-slate-500">
-            L1 med: {metrics.medianResL1Hrs}h · Esc med: {metrics.medianResEscHrs}h
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-amber-600">
+              {metrics.avoidableEscalationRatePct}%
+            </span>
+            <span className="text-xs text-slate-500">target &lt; 20%</span>
+          </div>
+          <div className="mt-1 text-xs text-slate-600">
+            Ping-pong (2+): <strong>{metrics.pingPongRatePct}%</strong> · Deflected:{' '}
+            <strong className="text-emerald-700">{metrics.deflectedCount}</strong>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Quality Guardrails
+          </div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-900">
+              {metrics.reopenRatePct}%
+            </span>
+            <span className="text-xs text-slate-500">reopen</span>
+            <span className="text-slate-300">|</span>
+            <span className="text-lg font-bold text-slate-900">
+              {metrics.avgCsat}
+            </span>
+            <span className="text-xs text-slate-500">CSAT</span>
+          </div>
+          <div className="mt-1 text-xs text-slate-600">
+            L1 med {metrics.medianResL1Hrs}h vs Esc {metrics.medianResEscHrs}h
           </div>
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-slate-900">
-          Agent Coaching Flags Preview ({agentStats.length} agents · {weeklySeries.length} weeks loaded)
-        </h2>
-        <pre className="overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-emerald-300">
-          {JSON.stringify(agentStats, null, 2)}
-        </pre>
-      </div>
+      {/* Main Filterable Queue */}
+      <TicketQueue
+        tickets={tickets}
+        selectedTicketId={selectedTicketId}
+        onSelectTicket={(ticket) => setSelectedTicketId(ticket.ticket_id)}
+      />
+
+      {/* Slide-Over Action Drawer */}
+      <TicketActionDrawer
+        ticket={selectedTicket}
+        onClose={() => setSelectedTicketId(null)}
+        onDeflectKnownIssue={handleDeflectKnownIssue}
+        onOpenGatekeeper={handleOpenGatekeeper}
+        onOpenClosure={handleOpenClosure}
+      />
     </div>
   );
 }
